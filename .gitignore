@@ -1,0 +1,11 @@
+# 1. Ignorar o Ambiente Virtual inteiro
+venv/
+
+# 2. Ignorar arquivos de segurança e configuração (CRÍTICO)
+.env
+*.json  
+
+# 3. Ignorar logs e arquivos gerados
+*.log
+dashboard.xlsx
+__pycache__/
