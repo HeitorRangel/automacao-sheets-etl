@@ -3,7 +3,9 @@ import pandas as pd
 import os
 import logging  
 from datetime import datetime
-import dotenv
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,6 +20,23 @@ output = os.getenv('NOME_ARQUIVO_SAIDA', 'dashboard.xlsx')
 
 sheet_name = ['vendas - setembro', 'vendas - outubro', 'vendas - novembro']
 sheet_index = 0
+
+COLUNAS_OBRIGATORIAS = ['Data', 'Vendedor', 'Produto', 'Quantidade', 'Valor Unitario', 'Total']
+
+def validar_colunas(df, nome_planilha):
+    """
+    Verifica se todas as colunas obrigatórias estão presentes no DataFrame.
+    Retorna True se estiver tudo ok, False se faltar algo.
+    """
+    colunas_presentes = set(df.columns)
+    colunas_esperadas = set(COLUNAS_OBRIGATORIAS)
+    
+    # Verifica se as esperadas são um subconjunto das presentes
+    if not colunas_esperadas.issubset(colunas_presentes):
+        colunas_faltantes = colunas_esperadas - colunas_presentes
+        logging.error(f'ERRO DE SCHEMA em "{nome_planilha}": Faltam as colunas {colunas_faltantes}')
+        return False
+    return True
 
 def lerPlanilhas():
     all_df = []
@@ -45,6 +64,9 @@ def lerPlanilhas():
             
             # Cria o DataFrame individual
             df = pd.DataFrame(data[1:], columns=data[0])
+            if not validar_colunas(df, name):
+                logging.warning(f'Planilha "{name}" ignorada pois não segue o padrão (Schema).')
+                continue
             all_df.append(df)
             
         except gspread.exceptions.SpreadsheetNotFound:
@@ -74,7 +96,7 @@ def lerPlanilhas():
 
     try:
         combined_df.to_excel(output, index=False)
-        logging.info(f'Processo ETL concluído com sucesso. Dados salvos em {output}, as {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+        logging.info(f'Processo ETL concluido com sucesso. Dados salvos em {output}, as {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
     except Exception as e:
         logging.error(f'Erro ao salvar o arquivo Excel: {e}', exc_info=True)
 
