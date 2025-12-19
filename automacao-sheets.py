@@ -1,114 +1,108 @@
 import gspread
 import pandas as pd
 import os
-import logging  
+import logging
+import sqlite3
+import re
 from datetime import datetime
 from dotenv import load_dotenv
-import sqlite3
 
 load_dotenv()
 
+# Configuração de Log
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("processo_etl.log"),
-        logging.StreamHandler()
-    ])
+    handlers=[logging.FileHandler("processo_etl.log"), logging.StreamHandler()]
+)
 
-google_credencial = os.getenv('GOOGLE_CREDENTIALS_PATH')
-output = os.getenv('NOME_ARQUIVO_SAIDA', 'dashboard.xlsx')
+class VendasETL:
+    def __init__(self):
+        self.google_credencial = os.getenv('GOOGLE_CREDENTIALS_PATH')
+        self.db_path = 'vendas_dw.db'
+        self.colunas_obrigatorias = {'Data', 'Vendedor', 'Produto', 'Quantidade', 'Valor Unitario', 'Total'}
+        self.client = self._conectar_google()
 
-sheet_name = ['vendas - setembro', 'vendas - outubro', 'vendas - novembro']
-sheet_index = 0
-
-COLUNAS_OBRIGATORIAS = ['Data', 'Vendedor', 'Produto', 'Quantidade', 'Valor Unitario', 'Total']
-
-def validar_colunas(df, nome_planilha):
-    """
-    Verifica se todas as colunas obrigatórias estão presentes no DataFrame.
-    Retorna True se estiver tudo ok, False se faltar algo.
-    """
-    colunas_presentes = set(df.columns)
-    colunas_esperadas = set(COLUNAS_OBRIGATORIAS)
-    
-    # Verifica se as esperadas são um subconjunto das presentes
-    if not colunas_esperadas.issubset(colunas_presentes):
-        colunas_faltantes = colunas_esperadas - colunas_presentes
-        logging.error(f'ERRO DE SCHEMA em "{nome_planilha}": Faltam as colunas {colunas_faltantes}')
-        return False
-    return True
-
-def lerPlanilhas():
-    all_df = []
-
-    if not google_credencial:
-        logging.critical('Caminho para as credenciais do Google nao encontrado. Verifique o arquivo .env.')
-        return None
-
-    logging.info('Iniciando processo ETL...')
-    logging.info('Conectando ao Google Sheets...')
-
-    try:
-        gc = gspread.service_account(filename=google_credencial)
-    except Exception as e:
-        logging.error(f'Erro ao conectar ao Google Sheets: {e}', exec_info=True)
-        return None
-    
-    #FASE 1: COLETA DE DADOS
-    for name in sheet_name:
-        logging.info(f'Lendo planilha: {name}')
+    def _conectar_google(self):
+        """Método privado para conexão."""
         try:
-            abrir_planilha = gc.open(name)
-            worksheet = abrir_planilha.get_worksheet(sheet_index)
-            data = worksheet.get_all_values()
-            
-            # Cria o DataFrame individual
-            df = pd.DataFrame(data[1:], columns=data[0])
-            if not validar_colunas(df, name):
-                logging.warning(f'Planilha "{name}" ignorada pois não segue o padrão (Schema).')
-                continue
-            all_df.append(df)
-            
-        except gspread.exceptions.SpreadsheetNotFound:
-            logging.warning(f'Planilha {name} nao encontrada. Passando para a proxima.')
+            if not self.google_credencial:
+                raise ValueError("Variável GOOGLE_CREDENTIALS_PATH não configurada.")
+            return gspread.service_account(filename=self.google_credencial)
         except Exception as e:
-            logging.error(f'Erro ao ler a planilha {name}: {e}', exc_info=True)
+            logging.critical(f'Falha na conexão com Google: {e}', exc_info=True)
+            return None
 
-    #FASE 2: PROCESSAMENTO E SAÍDA    
-    if not all_df:
-        logging.critical('Nenhuma planilha foi lida com sucesso. Encerrando o processo ETL.')
-        return None
+    def validar_schema(self, df, nome_planilha):
+        colunas_presentes = set(df.columns)
+        if not self.colunas_obrigatorias.issubset(colunas_presentes):
+            faltantes = self.colunas_obrigatorias - colunas_presentes
+            logging.error(f'SCHEMA INVÁLIDO em "{nome_planilha}". Faltam: {faltantes}')
+            return False
+        return True
+
+    def extract(self, pattern="vendas -"):
+        """Busca dinâmica: Pega todas as planilhas que contêm o padrão no nome."""
+        if not self.client: return []
         
-    logging.info('Consolidando dados...')
-    combined_df = pd.concat(all_df, ignore_index=True)
-
-    # Tratamento de dados (conversão de moeda e datas)
-    for col in ['Valor Unitario', 'Total', 'Quantidade']:
-        # Verifica se a coluna existe antes de tentar converter para evitar erros
-        if col in combined_df.columns:
-            combined_df[col] = pd.to_numeric(
-                combined_df[col].astype(str).str.replace(',', '.', regex=False), 
-                errors='coerce'
-            )
-
-    if 'Data' in combined_df.columns:
-        combined_df['Data'] = pd.to_datetime(combined_df['Data'], errors='coerce', dayfirst=True)
-
-    try:
-        # CONEXÃO COM BANCO DE DADOS SQL (SQLite cria um arquivo local .db)
-        conn = sqlite3.connect('vendas_dw.db')
+        dfs = []
+        # Lista todas as planilhas disponíveis na conta de serviço
+        all_spreadsheets = self.client.openall()
         
-        # O parâmetro 'if_exists' pode ser 'append' (adicionar) ou 'replace' (substituir)
-        combined_df.to_sql('tb_vendas_consolidadas', conn, if_exists='replace', index=False)
-        
-        conn.close()
-        logging.info(f'Carga no Banco de Dados (SQLite) concluída com sucesso! Tabela: tb_vendas_consolidadas')
-        
-    except Exception as e:
-        logging.error(f'Erro ao salvar no Banco de Dados: {e}', exc_info=True)
+        for spreadsheet in all_spreadsheets:
+            if pattern in spreadsheet.title.lower():
+                logging.info(f'Extraindo: {spreadsheet.title}')
+                try:
+                    worksheet = spreadsheet.get_worksheet(0)
+                    data = worksheet.get_all_values()
+                    df = pd.DataFrame(data[1:], columns=data[0])
+                    
+                    if self.validar_schema(df, spreadsheet.title):
+                        dfs.append(df)
+                except Exception as e:
+                    logging.error(f'Erro ao ler {spreadsheet.title}: {e}', exc_info=True)
+        return dfs
 
-    return combined_df
-    
+    def transform(self, df_list):
+        if not df_list: return None
+        
+        logging.info('Iniciando Transformação...')
+        combined_df = pd.concat(df_list, ignore_index=True)
+
+        # Limpeza de números (remove R$ e espaços)
+        cols_numericas = ['Valor Unitario', 'Total', 'Quantidade']
+        for col in cols_numericas:
+            if col in combined_df.columns:
+                # Remove 'R$', espaços e troca vírgula por ponto
+                combined_df[col] = combined_df[col].astype(str).apply(
+                    lambda x: x.replace('R$', '').replace('.', '').replace(',', '.').strip()
+                )
+                combined_df[col] = pd.to_numeric(combined_df[col], errors='coerce')
+
+        if 'Data' in combined_df.columns:
+            combined_df['Data'] = pd.to_datetime(combined_df['Data'], errors='coerce', dayfirst=True)
+            
+        return combined_df
+
+    def load(self, df):
+        if df is None or df.empty:
+            logging.warning("Nenhum dado para salvar.")
+            return
+
+        try:
+            # Context Manager (with) garante o fechamento do banco
+            with sqlite3.connect(self.db_path) as conn:
+                df.to_sql('tb_vendas_consolidadas', conn, if_exists='replace', index=False)
+                logging.info(f'Carga concluída! {len(df)} registros inseridos no Data Warehouse.')
+        except Exception as e:
+            logging.error(f'Erro no Load: {e}', exc_info=True)
+
+    def run(self):
+        logging.info("Iniciando Pipeline ETL...")
+        dados_brutos = self.extract()
+        dados_tratados = self.transform(dados_brutos)
+        self.load(dados_tratados)
+
 if __name__ == '__main__':
-    lerPlanilhas()
+    pipeline = VendasETL()
+    pipeline.run()
