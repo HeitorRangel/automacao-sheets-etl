@@ -1,0 +1,4 @@
+gspread
+pandas
+python-dotenv
+openpyxl

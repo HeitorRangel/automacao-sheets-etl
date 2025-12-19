@@ -4,6 +4,7 @@ import os
 import logging  
 from datetime import datetime
 from dotenv import load_dotenv
+import sqlite3
 
 load_dotenv()
 
@@ -95,10 +96,17 @@ def lerPlanilhas():
         combined_df['Data'] = pd.to_datetime(combined_df['Data'], errors='coerce', dayfirst=True)
 
     try:
-        combined_df.to_excel(output, index=False)
-        logging.info(f'Processo ETL concluido com sucesso. Dados salvos em {output}, as {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+        # CONEXÃO COM BANCO DE DADOS SQL (SQLite cria um arquivo local .db)
+        conn = sqlite3.connect('vendas_dw.db')
+        
+        # O parâmetro 'if_exists' pode ser 'append' (adicionar) ou 'replace' (substituir)
+        combined_df.to_sql('tb_vendas_consolidadas', conn, if_exists='replace', index=False)
+        
+        conn.close()
+        logging.info(f'Carga no Banco de Dados (SQLite) concluída com sucesso! Tabela: tb_vendas_consolidadas')
+        
     except Exception as e:
-        logging.error(f'Erro ao salvar o arquivo Excel: {e}', exc_info=True)
+        logging.error(f'Erro ao salvar no Banco de Dados: {e}', exc_info=True)
 
     return combined_df
     
