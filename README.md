@@ -41,6 +41,7 @@ Visualização do tráfego de requisições e latência das APIs utilizadas no p
 1. Clone o repositório
 
 git clone [https://github.com/HeitorRangel/automacao-sheets-etl.git](https://github.com/HeitorRangel/automacao-sheets-etl.git)
+
 cd automacao-sheets-etl
 
 2. Instale as Dependências
@@ -57,15 +58,21 @@ NOME_ARQUIVO_SAIDA="dashboard.xlsx"
 
 python automacao-sheets.py
 
-##Estrutura do Banco de Dados
+## Estrutura do Banco de Dados
+
 O script gera automaticamente o arquivo vendas_dw.db com a seguinte tabela consolidada:
 
-Data (DATETIME)
-Vendedor (TEXT)
+  Data (DATETIME)
+
+  Vendedor (TEXT)
+
 Produto (TEXT)
+
 Quantidade (INTEGER)
+
 Valor Unitario (REAL)
+
 Total (REAL)
 
-###Autor
-Heitor Espinosa de C. Rangel LinkedIn | heitorespinosa@gmail.com
+### Autor
+Heitor Espinosa de C. Rangel [LinkedIn ](https://www.linkedin.com/in/heitorespinosa/)| heitorespinosa@gmail.com
