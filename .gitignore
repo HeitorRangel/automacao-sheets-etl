@@ -1,11 +1,33 @@
-# 1. Ignorar o Ambiente Virtual inteiro
-venv/
-
-# 2. Ignorar arquivos de segurança e configuração (CRÍTICO)
+# --- Segurança ---
 .env
-*.json  
+.env.*
+*.json
+!package.json
+!tsconfig.json
 
-# 3. Ignorar logs e arquivos gerados
-*.log
-dashboard.xlsx
+# --- Python ---
 __pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# --- Logs e Arquivos Temporários ---
+*.log
+*.tmp
+
+# --- Dados Locais e Bancos de Dados ---
+*.db
+*.sqlite3
+vendas_dw.db
+
+# --- Arquivos gerados pelo Script ---
+*.xlsx
+*.csv
+
+# --- IDEs e Sistema Operacional ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
